@@ -30,52 +30,175 @@
 
 ;; we are using structs from cl-lib here
 (eval-when-compile (require 'cl-lib))
-(require 'dash)   ; for -when-let*
 (require 'reddit)
 
-(cl-defstruct gnus-reddit-listing before after modhash children)
-
 (defvar gnus-reddit-json-parsers
-  '((String . #'identity)
-    (special . #'identity)
-    (int . #'identity)
-    (long . #'identity)
+  '((String . identity)
+    (special . identity)
+    (int . identity)
+    (long . identity)
     (boolean . (lambda (x) (cond ((eql x :json-false) nil)
                                  ((eql x :json-true) t)
                                  (t nil))))
-    (array 	. #'identity)
-    (Message? . #'identity)
-    (List<String> . #'identity)
-    (List<thing> . #'identity))
+    (array 	. identity)
+    (Message? . identity)
+    (List<String> . identity)
+    (List<thing> . identity))
   "A mapping between json types used in reddit api and corresponding parsers")
 
 
-(defvar gnus-reddit-format-listing
-  '((String before "The fullname of the listing that follows before this page. null if there is no previous page.")
-    (String after "The fullname of the listing that follows after this page. null if there is no next page.")
-    (String modhash "This modhash is not the same modhash provided upon login. You do not need to update your user's modhash everytime you get a new modhash. You can reuse the modhash given upon login.")
-    (List<thing> children "A list of things that this Listing wraps.")))
+(defmacro gnus-reddit-create-parser (name &rest format)
+  "Create a struct NAME representing the FORMAT and create function.
+Usage example:
+Given call
+
+\(gnus-reddit-create-parser listing
+\  (String before \"The fullname of the listing that follows before this page. null if there is no previous page.\")
+\  (String after \"The fullname of the listing that follows after this page. null if there is no next page.\")
+\  (String modhash \"This modhash is not the same modhash provided upon login. You do not need to update your user's modhash everytime you get a new modhash. You can reuse the modhash given upon login.\")
+\  (List<thing> children \"A list of things that this Listing wraps.\"))
+
+Will generate the following code:
+
+\(progn
+\  (cl-defstruct gnus-reddit-listing id name kind before after modhash children)
+\  (defun gnus-reddit-create-listing
+\      (content)
+\    (let*
+\	((data
+\	  (cdr
+\	   (assq 'data content)))
+\	 (id
+\	  (cdr
+\	   (assq 'id content)))
+\	 (name
+\	  (cdr
+\	   (assq 'name content)))
+\	 (kind
+\	  (cdr
+\	   (assq 'kind content)))
+\	 (before
+\	  (cdr
+\	   (assq 'before data)))
+\	 (after
+\	  (cdr
+\	   (assq 'after data)))
+\	 (modhash
+\	  (cdr
+\	   (assq 'modhash data)))
+\	 (children
+\	  (cdr
+\	   (assq 'children data))))
+\      (when
+\	  (or before after modhash children)
+\	(make-gnus-reddit-listing :id
+\				  (funcall
+\				   (cdr
+\				    (assq 'String gnus-reddit-json-parsers))
+\				   id)
+\				  :name
+\				  (funcall
+\				   (cdr
+\				    (assq 'String gnus-reddit-json-parsers))
+\				   name)
+\				  :kind
+\				  (funcall
+\				   (cdr
+\				    (assq 'String gnus-reddit-json-parsers))
+\				   kind)
+\				  :before
+\				  (funcall
+\				   (cdr
+\				    (assq 'String gnus-reddit-json-parsers))
+\				   before)
+\				  :after
+\				  (funcall
+\				   (cdr
+\				    (assq 'String gnus-reddit-json-parsers))
+\				   after)
+\				  :modhash
+\				  (funcall
+\				   (cdr
+\				    (assq 'String gnus-reddit-json-parsers))
+\				   modhash)
+\				  :children
+\				  (funcall
+\				   (cdr
+\				    (assq 'List<thing> gnus-reddit-json-parsers))
+\				   children))))))
+
+These struct and function could be used in the following way:
+
+Declare some variable containing json output of listings:
+
+\(defvar gnus-reddit-example-subreddits
+\  (reddit-get \"/subreddits/default.json\" nil))
+
+and then we can fill in the appropriate struct and use it:
+
+\(let ((sr
+\       (gnus-reddit-create-listing gnus-reddit-example-subreddits)))
+\  (cl-prettyprint
+\   (gnus-reddit-listing-kind sr)))
+
+"
+  (declare (indent 1) (debug ((symbolp form &optional form) format)))
+  (let* ((struct-name (concat "gnus-reddit" "-" (symbol-name name)))
+         (struct-symbol (intern struct-name))
+         (make-symbol (intern (concat "make-" struct-name)))
+         (create-func-symbol (intern (concat "gnus-reddit-create-" (symbol-name name))))
+         (field-parsers (mapcar (lambda (x)
+                                  (let* ((field (cadr x))
+                                         (keyword
+                                          (intern (concat ":" (symbol-name field))))
+                                         (type (car x)))
+                                    `(,keyword
+                                      (funcall (cdr (assq ',type
+                                                          gnus-reddit-json-parsers))
+                                               ,field))))
+                                ;;field))
+                                format))
+         (flatten-field-parsers nil))
+    (mapc (lambda (x)
+            (mapc (lambda (y) (push y flatten-field-parsers)) x))
+          field-parsers)
+    `(progn 
+       (cl-defstruct ,struct-symbol id name kind
+                     ,@(mapcar #'cadr format))
+       (defun ,create-func-symbol (content)
+         ;; common from Thing
+         (let* ((data (cdr (assq 'data content)))
+                (id (cdr (assq 'id content)))
+                (name (cdr (assq 'name content)))
+                (kind (cdr (assq 'kind content)))
+                ;; own from Listing
+                ,@(mapcar (lambda (x)
+                            (let ((field (cadr x)))
+                              `(,field (cdr (assq ',field data)))))
+                          format))
+           (when (or ,@(mapcar #'cadr format))
+             (,make-symbol
+              ;; from Thing
+              :id (funcall (cdr (assq 'String gnus-reddit-json-parsers)) id)
+              :name (funcall (cdr (assq 'String gnus-reddit-json-parsers)) name)
+              :kind (funcall (cdr (assq 'String gnus-reddit-json-parsers)) kind)
+              ,@(nreverse flatten-field-parsers)
+              )))))))
+
+
+(gnus-reddit-create-parser listing
+  (String before "The fullname of the listing that follows before this page. null if there is no previous page.")
+  (String after "The fullname of the listing that follows after this page. null if there is no next page.")
+  (String modhash "This modhash is not the same modhash provided upon login. You do not need to update your user's modhash everytime you get a new modhash. You can reuse the modhash given upon login.")
+  (List<thing> children "A list of things that this Listing wraps."))
+
 
 (defun gnus-reddit-get-subreddits ()
-  (-when-let (sr (reddit-get "/subreddits/default.json" nil))
-    (let ((data (cdr (assq 'data sr))))
-      (dolist
-          
-      ;;      (before (cdr (assq 'before data)))
-      ;;      (after (cdr (assq 'after data)))
-      ;;      (modhash (cdr (assq 'modhash data)))
-      ;;      (children (cdr (assq 'children data))))
-      ;; ;; if at least anything
-      ;; (when (or data before after children (vectorp children))
-      ;;   (let ((sr 
-      ;;          (make-gnus-reddit-listing :before before
-      ;;                                    :after after
-      ;;                                    :modhash modhash
-      ;;                                    :children children)))
-      ;;     sr)))))
+  (let ((content (reddit-get "/subreddits/default.json" nil)))
+    (when content
+      (gnus-reddit-create-listing content))))
     
 
-  
 
 
 (provide 'gnus-reddit-api)
