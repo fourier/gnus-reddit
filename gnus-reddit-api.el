@@ -193,10 +193,45 @@ and then we can fill in the appropriate struct and use it:
   (List<thing> children "A list of things that this Listing wraps."))
 
 
-(defun gnus-reddit-get-subreddits ()
-  (let ((content (reddit-get "/subreddits/default.json" nil)))
+(gnus-reddit-create-parser subreddit
+  (int 	accounts_active 	"number of users active in last 15 minutes")
+  (int 	comment_score_hide_mins 	"number of minutes the subreddit initially hides comment scores")
+  (String 	description 	"sidebar text")
+  (String 	description_html 	"sidebar text, escaped HTML format")
+  (String 	display_name 	"human name of the subreddit")
+  (String 	header_img 	"full URL to the header image, or null")
+  (array 	header_size 	"width and height of the header image, or null")
+  (String 	header_title 	"description of header image shown on hover, or null")
+  (boolean 	over18 	"whether the subreddit is marked as NSFW")
+  (String 	public_description 	"Description shown in subreddit search results?")
+  (boolean 	public_traffic 	"whether the subreddit's traffic page is publicly-accessible")
+  (long 	subscribers 	"the number of redditors subscribed to this subreddit")
+  (String 	submission_type 	"the type of submissions the subreddit allows - one of \"any\", \"link\" or \"self\"")
+  (String 	submit_link_label 	"the subreddit's custom label for the submit link button, if any")
+  (String 	submit_text_label 	"the subreddit's custom label for the submit text button, if any")
+  (String 	subreddit_type 	"the subreddit's type - one of \"public\", \"private\", \"restricted\", or in very special cases \"gold_restricted\" or \"archived\"")
+  (String 	title 	"title of the main page")
+  (String 	url 	"The relative URL of the subreddit. Ex: \"/r/pics/\"")
+  (boolean 	user_is_banned 	"whether the logged-in user is banned from the subreddit")
+  (boolean 	user_is_contributor 	"whether the logged-in user is an approved submitter in the subreddit")
+  (boolean 	user_is_moderator 	"whether the logged-in user is a moderator of the subreddit")
+  (boolean 	user_is_subscriber 	"whether the logged-in user is subscribed to the subreddit"))
+
+
+(defun gnus-reddit-get-subreddits (&optional content)
+  "Returns the listing struct of subreddits from reddit or optional CONTENT.
+The children of the subreddit are subreddit structs"
+  (let ((content (or content ;; either content given or get from the server
+                     (reddit-get "/subreddits/popular.json" nil))))
     (when content
-      (gnus-reddit-create-listing content))))
+      (let ((sr (gnus-reddit-create-listing content)))
+        ;; parse children of the listing
+        (dotimes (n (length (gnus-reddit-listing-children sr)))
+          (setf (aref (gnus-reddit-listing-children sr) n)
+                (gnus-reddit-create-subreddit (aref (gnus-reddit-listing-children sr) n))))
+        sr))))
+
+
     
 
 
