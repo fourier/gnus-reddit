@@ -33,8 +33,7 @@
 (require 'nnoo)
 (eval-when-compile (require 'cl-lib))
 
-(require 'reddit)
-
+(require 'gnus-reddit-api)
 ;;
 ;; Constants
 ;;
@@ -43,11 +42,6 @@
 ;;
 ;; Configurable variables
 ;; 
-
-
-
-;;(reddit-get "/r/emacs/top.json" nil)
-
 
 (gnus-declare-backend "nnreddit" 'post 'respool 'address)
 
@@ -103,11 +97,14 @@
     )
 
 (defun nnreddit-request-list (&optional server)
+  "Returns (via nntp-server-buffer) the list of 5000 popular subreddits"
   (with-current-buffer nntp-server-buffer
     (erase-buffer)
-    (insert "ifi.test 0 1 n\nifi.discussion 0 1 n")
+    (insert "ifi.test 1 0 n\nifi.discussion 1 0 n")
+    (let (after)
+      
     )
-  t)
+  t))
 
 (defun nnreddit-request-post (&optional server)
   "Post current buffer to reddit"
