@@ -100,11 +100,26 @@
   "Returns (via nntp-server-buffer) the list of 5000 popular subreddits"
   (with-current-buffer nntp-server-buffer
     (erase-buffer)
-    (insert "ifi.test 1 0 n\nifi.discussion 1 0 n")
-    (let (after)
-      
-    )
-  t))
+    ;;(insert "ifi.test 1 0 n\nifi.discussion 1 0 n")
+  (let* ((after nil)
+         (subreddits-listing
+          (gnus-reddit-get-subscribed-subreddits :limit 25 :after after))
+         (subreddits (gnus-reddit-listing-children subreddits-listing)))
+    (setq after (gnus-reddit-listing-after subreddits-listing))
+    (dotimes (n (length subreddits))
+      (let* ((subreddit (aref subreddits n))
+             (last-100-subtopics
+              (gnus-reddit-listing-children 
+               (gnus-reddit-get-subreddit-topics
+                (gnus-reddit-subreddit-url subreddit)
+                :limit 100)))
+             (count 0))
+        ;; form the ids of messages
+        (dotimes (k (length last-100-subtopics))
+          (let ((subtopic (aref last-100-subtopics k)))
+            (setq count (+ count (gnus-reddit-link-num_comments subtopic)))))
+        (insert (format "%s %d 1 n\n" (gnus-reddit-subreddit-url subreddit) count))))))
+  t)
 
 (defun nnreddit-request-post (&optional server)
   "Post current buffer to reddit"
